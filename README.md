@@ -88,11 +88,21 @@ The plugin uses multiple methods to scan your network:
 For best results, install arp-scan or nmap on your Steam Deck:
 
 ```bash
+# Steam Deck uses Arch Linux with pacman
+# Switch to desktop mode and open Konsole terminal
+
 # Install arp-scan (recommended)
 sudo pacman -S arp-scan
 
 # Or install nmap
 sudo pacman -S nmap
+```
+
+Note: Steam Deck's filesystem is read-only by default. You may need to disable read-only mode temporarily:
+```bash
+sudo steamos-readonly disable
+# Install your packages
+sudo steamos-readonly enable
 ```
 
 ## Troubleshooting

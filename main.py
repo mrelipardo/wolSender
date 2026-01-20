@@ -38,6 +38,29 @@ class Plugin:
 
     # Device Management Methods
     
+    def _normalize_and_validate_mac(self, mac: str) -> Optional[str]:
+        """Normalize and validate MAC address format."""
+        try:
+            # Clean and validate MAC address
+            mac = mac.upper().replace('-', ':')
+            mac_parts = mac.split(':')
+            
+            if len(mac_parts) != 6:
+                return None
+            
+            # Validate each part is 2 hex characters
+            for part in mac_parts:
+                if len(part) != 2:
+                    return None
+                try:
+                    int(part, 16)
+                except ValueError:
+                    return None
+            
+            return mac
+        except Exception:
+            return None
+
     async def get_devices(self) -> List[Dict[str, str]]:
         """Get the list of saved devices."""
         try:
@@ -64,22 +87,26 @@ class Plugin:
         try:
             devices = await self.get_devices()
             
-            # Validate MAC address format
-            mac = mac.upper().replace('-', ':')
-            mac_parts = mac.split(':')
-            if len(mac_parts) != 6 or not all(len(p) == 2 for p in mac_parts):
+            # Validate and normalize MAC address
+            normalized_mac = self._normalize_and_validate_mac(mac)
+            if not normalized_mac:
                 decky.logger.error(f"Invalid MAC address format: {mac}")
+                return False
+            
+            # Validate IP address format
+            if not self._is_valid_ip(ip):
+                decky.logger.error(f"Invalid IP address format: {ip}")
                 return False
             
             # Check if device already exists
             for device in devices:
-                if device['mac'] == mac:
-                    decky.logger.warning(f"Device with MAC {mac} already exists")
+                if device['mac'] == normalized_mac:
+                    decky.logger.warning(f"Device with MAC {normalized_mac} already exists")
                     return False
             
             devices.append({
                 'name': name,
-                'mac': mac,
+                'mac': normalized_mac,
                 'ip': ip
             })
             
@@ -92,8 +119,12 @@ class Plugin:
         """Remove a device from the list."""
         try:
             devices = await self.get_devices()
-            mac = mac.upper().replace('-', ':')
-            devices = [d for d in devices if d['mac'] != mac]
+            normalized_mac = self._normalize_and_validate_mac(mac)
+            if not normalized_mac:
+                decky.logger.error(f"Invalid MAC address format: {mac}")
+                return False
+            
+            devices = [d for d in devices if d['mac'] != normalized_mac]
             return await self.save_devices(devices)
         except Exception as e:
             decky.logger.error(f"Error removing device: {e}")
@@ -103,17 +134,28 @@ class Plugin:
         """Update an existing device."""
         try:
             devices = await self.get_devices()
-            old_mac = old_mac.upper().replace('-', ':')
-            mac = mac.upper().replace('-', ':')
+            
+            # Validate and normalize MAC addresses
+            old_mac_normalized = self._normalize_and_validate_mac(old_mac)
+            new_mac_normalized = self._normalize_and_validate_mac(mac)
+            
+            if not old_mac_normalized or not new_mac_normalized:
+                decky.logger.error("Invalid MAC address format")
+                return False
+            
+            # Validate IP address
+            if not self._is_valid_ip(ip):
+                decky.logger.error(f"Invalid IP address format: {ip}")
+                return False
             
             for device in devices:
-                if device['mac'] == old_mac:
+                if device['mac'] == old_mac_normalized:
                     device['name'] = name
-                    device['mac'] = mac
+                    device['mac'] = new_mac_normalized
                     device['ip'] = ip
                     return await self.save_devices(devices)
             
-            decky.logger.warning(f"Device with MAC {old_mac} not found")
+            decky.logger.warning(f"Device with MAC {old_mac_normalized} not found")
             return False
         except Exception as e:
             decky.logger.error(f"Error updating device: {e}")
@@ -124,16 +166,14 @@ class Plugin:
     async def send_wol(self, mac: str) -> bool:
         """Send a Wake-on-LAN magic packet to the specified MAC address."""
         try:
-            # Clean and validate MAC address
-            mac = mac.upper().replace('-', ':').replace('.', ':')
-            mac_parts = mac.split(':')
-            
-            if len(mac_parts) != 6:
+            # Validate and normalize MAC address
+            normalized_mac = self._normalize_and_validate_mac(mac)
+            if not normalized_mac:
                 decky.logger.error(f"Invalid MAC address: {mac}")
                 return False
             
             # Convert MAC address to bytes
-            mac_bytes = bytes.fromhex(''.join(mac_parts))
+            mac_bytes = bytes.fromhex(normalized_mac.replace(':', ''))
             
             # Create magic packet (6 bytes of FF followed by 16 repetitions of MAC)
             magic_packet = b'\xff' * 6 + mac_bytes * 16
@@ -153,7 +193,7 @@ class Plugin:
             
             sock.close()
             
-            decky.logger.info(f"WOL packet sent to {mac}")
+            decky.logger.info(f"WOL packet sent to {normalized_mac}")
             return True
             
         except Exception as e:
@@ -165,6 +205,11 @@ class Plugin:
     async def check_device_status(self, ip: str) -> bool:
         """Check if a device is awake by pinging it."""
         try:
+            # Validate IP address format to prevent command injection
+            if not self._is_valid_ip(ip):
+                decky.logger.error(f"Invalid IP address format: {ip}")
+                return False
+            
             # Use ping command with timeout
             result = subprocess.run(
                 ['ping', '-c', '1', '-W', '1', ip],
