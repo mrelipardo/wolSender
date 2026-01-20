@@ -2,7 +2,6 @@ import {
   ButtonItem,
   PanelSection,
   PanelSectionRow,
-  ToggleField,
   TextField,
   Field,
   Focusable,
@@ -16,7 +15,7 @@ import {
   definePlugin,
   toaster,
 } from "@decky/api"
-import { useState, useEffect, VFC } from "react";
+import { useState, useEffect, FC } from "react";
 import { FaPowerOff, FaPlus, FaTrash, FaEdit, FaSync, FaNetworkWired, FaCircle } from "react-icons/fa";
 
 // Backend API calls
@@ -46,7 +45,7 @@ interface DeviceWithStatus extends Device {
 }
 
 // Add/Edit Device Modal
-const DeviceModal: VFC<{
+const DeviceModal: FC<{
   device?: Device;
   onSave: (name: string, mac: string, ip: string) => Promise<void>;
   closeModal?: () => void;
@@ -130,7 +129,7 @@ const DeviceModal: VFC<{
 };
 
 // Network Scan Modal
-const NetworkScanModal: VFC<{
+const NetworkScanModal: FC<{
   onDeviceSelect: (device: ScannedDevice) => void;
   closeModal?: () => void;
 }> = ({ onDeviceSelect, closeModal }) => {
@@ -240,7 +239,7 @@ const NetworkScanModal: VFC<{
 };
 
 // Device Item Component
-const DeviceItem: VFC<{
+const DeviceItem: FC<{
   device: DeviceWithStatus;
   onWake: () => void;
   onEdit: () => void;
@@ -406,7 +405,7 @@ function Content() {
     );
   };
 
-  const handleEditDevice = (device: Device, index: number) => {
+  const handleEditDevice = (device: Device) => {
     showModal(
       <DeviceModal
         device={device}
@@ -518,7 +517,7 @@ function Content() {
           key={device.mac}
           device={device}
           onWake={() => handleWake(device)}
-          onEdit={() => handleEditDevice(device, index)}
+          onEdit={() => handleEditDevice(device)}
           onDelete={() => handleDeleteDevice(device)}
           onCheckStatus={() => handleCheckStatus(device, index)}
         />
