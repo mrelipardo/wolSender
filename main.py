@@ -15,6 +15,10 @@ import decky
 class Plugin:
     """Wake-on-LAN plugin for Steam Deck."""
     
+    # Configuration constants
+    MAX_CONCURRENT_PINGS = 50  # Maximum number of concurrent ping operations
+    MAX_SUBNET_SIZE = 254  # Maximum number of IPs to scan in ping sweep
+    
     async def _main(self):
         """Initialize the plugin."""
         self.loop = asyncio.get_event_loop()
@@ -260,6 +264,45 @@ class Plugin:
             decky.logger.error(f"Error getting network info: {e}")
             return None
 
+    async def get_available_scanning_tools(self) -> List[str]:
+        """Check which scanning tools are available on the system."""
+        tools = []
+        
+        # Check for arp-scan
+        try:
+            result = subprocess.run(['which', 'arp-scan'], capture_output=True, timeout=2)
+            if result.returncode == 0:
+                tools.append('arp-scan')
+        except:
+            pass
+        
+        # Check for nmap
+        try:
+            result = subprocess.run(['which', 'nmap'], capture_output=True, timeout=2)
+            if result.returncode == 0:
+                tools.append('nmap')
+        except:
+            pass
+        
+        # Check for ping
+        try:
+            result = subprocess.run(['which', 'ping'], capture_output=True, timeout=2)
+            if result.returncode == 0:
+                tools.append('ping')
+        except:
+            pass
+        
+        # ip neigh is usually always available
+        try:
+            result = subprocess.run(['which', 'ip'], capture_output=True, timeout=2)
+            if result.returncode == 0:
+                tools.append('arp-cache')
+        except:
+            pass
+        
+        decky.logger.info(f"Available scanning tools: {tools}")
+        return tools
+
     async def scan_network(self) -> List[Dict[str, str]]:
         """Scan the local network for active devices."""
         try:
@@ -296,6 +339,7 @@ class Plugin:
                                 })
                     
                     if devices:
+                        decky.logger.info(f"arp-scan found {len(devices)} devices")
                         return devices
             except FileNotFoundError:
                 decky.logger.info("arp-scan not available, trying nmap")
@@ -315,14 +359,28 @@ class Plugin:
                     # Parse nmap output and get MAC addresses from ARP cache
                     await self._parse_nmap_output(result.stdout, devices)
                     if devices:
+                        decky.logger.info(f"nmap found {len(devices)} devices")
                         return devices
             except FileNotFoundError:
-                decky.logger.info("nmap not available, using manual scan")
+                decky.logger.info("nmap not available, trying ARP cache")
             except Exception as e:
                 decky.logger.warning(f"nmap failed: {e}")
             
-            # Fallback to ARP cache only
-            return await self._scan_arp_cache()
+            # Try ARP cache
+            devices = await self._scan_arp_cache()
+            if devices:
+                decky.logger.info(f"ARP cache found {len(devices)} devices")
+                return devices
+            
+            # Final fallback: ping sweep
+            decky.logger.info("Trying ping sweep as final fallback")
+            devices = await self._ping_sweep(network_info['cidr'])
+            if devices:
+                decky.logger.info(f"Ping sweep found {len(devices)} devices")
+                return devices
+            
+            decky.logger.warning("No devices found with any scanning method")
+            return []
             
         except Exception as e:
             decky.logger.error(f"Error scanning network: {e}")
@@ -414,4 +472,76 @@ class Plugin:
             
         except Exception as e:
             decky.logger.error(f"Error reading ARP cache: {e}")
+            return []
+
+    async def _ping_sweep(self, network_cidr: str) -> List[Dict[str, str]]:
+        """Perform a ping sweep to discover devices on the network.
+        
+        This method pings all IPs in the subnet concurrently to populate the ARP cache,
+        then retrieves MAC addresses from the populated cache.
+        """
+        devices = []
+        
+        try:
+            # Parse network CIDR to get all host IPs
+            network = ipaddress.ip_network(network_cidr, strict=False)
+            all_ips = [str(ip) for ip in network.hosts()]
+            
+            # Limit the number of IPs to scan (safety check)
+            if len(all_ips) > self.MAX_SUBNET_SIZE:
+                decky.logger.warning(f"Large subnet detected ({len(all_ips)} hosts), limiting to {self.MAX_SUBNET_SIZE} IPs")
+                all_ips = all_ips[:self.MAX_SUBNET_SIZE]
+            
+            decky.logger.info(f"Starting ping sweep for {len(all_ips)} IPs")
+            
+            # Ping all IPs concurrently with limited concurrency
+            semaphore = asyncio.Semaphore(self.MAX_CONCURRENT_PINGS)
+            
+            async def ping_ip(ip: str) -> bool:
+                """Ping a single IP address."""
+                async with semaphore:
+                    try:
+                        # Validate IP to prevent injection
+                        if not self._is_valid_ip(ip):
+                            return False
+                        
+                        # Run ping command asynchronously
+                        process = await asyncio.create_subprocess_exec(
+                            'ping', '-c', '1', '-W', '1', ip,
+                            stdout=asyncio.subprocess.DEVNULL,
+                            stderr=asyncio.subprocess.DEVNULL
+                        )
+                        
+                        # Wait for completion with timeout
+                        try:
+                            await asyncio.wait_for(process.wait(), timeout=2)
+                            return process.returncode == 0
+                        except asyncio.TimeoutError:
+                            try:
+                                process.kill()
+                                await process.wait()
+                            except:
+                                pass
+                            return False
+                            
+                    except Exception:
+                        return False
+            
+            # Execute all pings concurrently
+            results = await asyncio.gather(*[ping_ip(ip) for ip in all_ips], return_exceptions=True)
+            
+            # Count successful pings
+            successful_pings = sum(1 for r in results if r is True)
+            decky.logger.info(f"Ping sweep completed: {successful_pings}/{len(all_ips)} hosts responded")
+            
+            # Give ARP cache a moment to settle
+            await asyncio.sleep(0.5)
+            
+            # Now read the populated ARP cache
+            devices = await self._scan_arp_cache()
+            
+            return devices
+            
+        except Exception as e:
+            decky.logger.error(f"Error during ping sweep: {e}")
             return []

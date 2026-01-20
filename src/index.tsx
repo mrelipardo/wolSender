@@ -26,6 +26,7 @@ const updateDevice = callable<[oldMac: string, name: string, mac: string, ip: st
 const sendWOL = callable<[mac: string], boolean>("send_wol");
 const checkDeviceStatus = callable<[ip: string], boolean>("check_device_status");
 const scanNetwork = callable<[], ScannedDevice[]>("scan_network");
+const getAvailableScanningTools = callable<[], string[]>("get_available_scanning_tools");
 
 interface Device {
   name: string;
@@ -54,12 +55,84 @@ const DeviceModal: FC<{
   const [mac, setMac] = useState(device?.mac || "");
   const [ip, setIp] = useState(device?.ip || "");
   const [saving, setSaving] = useState(false);
+  const [macError, setMacError] = useState("");
+  const [ipError, setIpError] = useState("");
+
+  // Validate MAC address format
+  const validateMAC = (macAddress: string) => {
+    if (!macAddress) {
+      setMacError("");
+      return false;
+    }
+    
+    // MAC format: XX:XX:XX:XX:XX:XX or XX-XX-XX-XX-XX-XX
+    const macRegex = /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/;
+    if (!macRegex.test(macAddress)) {
+      setMacError("Invalid MAC format. Use AA:BB:CC:DD:EE:FF");
+      return false;
+    }
+    
+    setMacError("");
+    return true;
+  };
+
+  // Validate IP address format
+  const validateIP = (ipAddress: string) => {
+    if (!ipAddress) {
+      setIpError("");
+      return false;
+    }
+    
+    // Basic IPv4 format check
+    const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
+    if (!ipRegex.test(ipAddress)) {
+      setIpError("Invalid IP format. Use 192.168.1.100");
+      return false;
+    }
+    
+    // Validate each octet
+    const octets = ipAddress.split('.');
+    for (const octet of octets) {
+      const num = parseInt(octet, 10);
+      if (num < 0 || num > 255) {
+        setIpError("IP octets must be between 0 and 255");
+        return false;
+      }
+    }
+    
+    setIpError("");
+    return true;
+  };
+
+  const handleMacChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setMac(value);
+    if (value) validateMAC(value);
+  };
+
+  const handleIpChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setIp(value);
+    if (value) validateIP(value);
+  };
 
   const handleSave = async () => {
     if (!name || !mac || !ip) {
       toaster.toast({
         title: "Validation Error",
         body: "All fields are required"
+      });
+      return;
+    }
+
+    // Validate before saving
+    const isMacValid = validateMAC(mac);
+    const isIpValid = validateIP(ip);
+    
+    if (!isMacValid || !isIpValid) {
+      toaster.toast({
+        title: "Validation Error",
+        body: "Please fix the errors before saving"
       });
       return;
     }
@@ -87,8 +160,21 @@ const DeviceModal: FC<{
       gap: "10px"
     }}>
       <div style={{ fontSize: "1.5em", marginBottom: "10px" }}>
-        {device ? "Edit Device" : "Add Device"}
+        {device ? "Edit Device" : "Add Device Manually"}
       </div>
+      
+      {!device && (
+        <div style={{ 
+          fontSize: "0.9em", 
+          opacity: 0.7, 
+          marginBottom: "10px",
+          padding: "10px",
+          backgroundColor: "rgba(255, 255, 255, 0.05)",
+          borderRadius: "5px"
+        }}>
+          💡 Manual entry is useful when network scanning doesn't find your device or scanning tools aren't available.
+        </div>
+      )}
       
       <TextField
         label="Device Name"
@@ -97,19 +183,41 @@ const DeviceModal: FC<{
         placeholder="My Computer"
       />
       
-      <TextField
-        label="MAC Address"
-        value={mac}
-        onChange={(e) => setMac(e.target.value)}
-        placeholder="AA:BB:CC:DD:EE:FF"
-      />
+      <div>
+        <TextField
+          label="MAC Address"
+          value={mac}
+          onChange={handleMacChange}
+          placeholder="AA:BB:CC:DD:EE:FF or AA-BB-CC-DD-EE-FF"
+        />
+        {macError && (
+          <div style={{ 
+            color: "#ff6b6b", 
+            fontSize: "0.85em", 
+            marginTop: "5px" 
+          }}>
+            ⚠️ {macError}
+          </div>
+        )}
+      </div>
       
-      <TextField
-        label="IP Address"
-        value={ip}
-        onChange={(e) => setIp(e.target.value)}
-        placeholder="192.168.1.100"
-      />
+      <div>
+        <TextField
+          label="IP Address"
+          value={ip}
+          onChange={handleIpChange}
+          placeholder="192.168.1.100"
+        />
+        {ipError && (
+          <div style={{ 
+            color: "#ff6b6b", 
+            fontSize: "0.85em", 
+            marginTop: "5px" 
+          }}>
+            ⚠️ {ipError}
+          </div>
+        )}
+      </div>
 
       <div style={{ 
         display: "flex", 
@@ -135,22 +243,34 @@ const NetworkScanModal: FC<{
 }> = ({ onDeviceSelect, closeModal }) => {
   const [scanning, setScanning] = useState(false);
   const [devices, setDevices] = useState<ScannedDevice[]>([]);
+  const [availableTools, setAvailableTools] = useState<string[]>([]);
+  const [scanAttempted, setScanAttempted] = useState(false);
+
+  const loadAvailableTools = async () => {
+    try {
+      const tools = await getAvailableScanningTools();
+      setAvailableTools(tools);
+    } catch (error) {
+      console.error("Failed to get available scanning tools:", error);
+    }
+  };
 
   const performScan = async () => {
     setScanning(true);
+    setScanAttempted(true);
     try {
       const result = await scanNetwork();
       setDevices(result);
       if (result.length === 0) {
         toaster.toast({
           title: "No Devices Found",
-          body: "No devices found on the network. Make sure you're connected to a network."
+          body: "Try adding a device manually or check your network connection."
         });
       }
     } catch (error) {
       toaster.toast({
         title: "Scan Error",
-        body: "Failed to scan network"
+        body: "Failed to scan network. Consider manual device entry."
       });
     } finally {
       setScanning(false);
@@ -158,6 +278,7 @@ const NetworkScanModal: FC<{
   };
 
   useEffect(() => {
+    loadAvailableTools();
     performScan();
   }, []);
 
@@ -187,15 +308,43 @@ const NetworkScanModal: FC<{
         </DialogButton>
       </div>
 
+      {/* Show available tools info */}
+      {availableTools.length > 0 && (
+        <div style={{ 
+          fontSize: "0.85em", 
+          opacity: 0.7,
+          padding: "8px",
+          backgroundColor: "rgba(255, 255, 255, 0.05)",
+          borderRadius: "5px"
+        }}>
+          📡 Available methods: {availableTools.join(", ")}
+        </div>
+      )}
+
       {scanning && (
         <div style={{ textAlign: "center", padding: "20px" }}>
           Scanning network...
         </div>
       )}
 
-      {!scanning && devices.length === 0 && (
-        <div style={{ textAlign: "center", padding: "20px" }}>
-          No devices found
+      {!scanning && scanAttempted && devices.length === 0 && (
+        <div style={{ 
+          textAlign: "center", 
+          padding: "20px",
+          backgroundColor: "rgba(255, 255, 255, 0.05)",
+          borderRadius: "5px"
+        }}>
+          <div style={{ fontSize: "1.2em", marginBottom: "10px" }}>
+            No devices found
+          </div>
+          <div style={{ fontSize: "0.9em", opacity: 0.8, marginBottom: "15px" }}>
+            {availableTools.length === 0 
+              ? "⚠️ No scanning tools available. Install arp-scan, nmap, or ensure ping is available."
+              : "Make sure you're connected to a network and devices are powered on."}
+          </div>
+          <div style={{ fontSize: "0.9em", opacity: 0.7 }}>
+            💡 Try using "Add Device Manually" instead to enter device details directly.
+          </div>
         </div>
       )}
 
@@ -482,20 +631,21 @@ function Content() {
   return (
     <PanelSection title="Wake-on-LAN">
       <PanelSectionRow>
-        <Focusable style={{ display: "flex", gap: "10px" }}>
-          <ButtonItem
-            layout="below"
-            onClick={handleAddDevice}
-          >
-            <FaPlus /> Add Device
-          </ButtonItem>
-          <ButtonItem
-            layout="below"
-            onClick={handleNetworkScan}
-          >
-            <FaNetworkWired /> Scan Network
-          </ButtonItem>
-        </Focusable>
+        <ButtonItem
+          layout="below"
+          onClick={handleAddDevice}
+        >
+          <FaPlus /> Add Device Manually
+        </ButtonItem>
+      </PanelSectionRow>
+      
+      <PanelSectionRow>
+        <ButtonItem
+          layout="below"
+          onClick={handleNetworkScan}
+        >
+          <FaNetworkWired /> Scan Network
+        </ButtonItem>
       </PanelSectionRow>
 
       {loading && (
@@ -507,7 +657,7 @@ function Content() {
       {!loading && devices.length === 0 && (
         <PanelSectionRow>
           <div style={{ textAlign: "center", opacity: 0.6 }}>
-            No devices added yet. Click "Add Device" or "Scan Network" to get started.
+            No devices added yet. Click "Add Device Manually" to enter device details or "Scan Network" to discover devices.
           </div>
         </PanelSectionRow>
       )}
