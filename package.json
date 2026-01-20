@@ -1,7 +1,7 @@
 {
-  "name": "decky-plugin-template",
-  "version": "0.0.1",
-  "description": "A template to quickly create decky plugins from scratch, based on TypeScript and webpack",
+  "name": "wol-sender",
+  "version": "1.0.0",
+  "description": "Wake-on-LAN plugin for Steam Deck to scan network and remotely wake up devices",
   "type": "module",
   "scripts": {
     "build": "rollup -c",
@@ -10,21 +10,23 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/SteamDeckHomebrew/decky-plugin-template.git"
+    "url": "git+https://github.com/mrelipardo/wolSender.git"
   },
   "keywords": [
     "decky",
     "plugin",
-    "plugin-template",
+    "wake-on-lan",
+    "wol",
     "steam-deck",
-    "deck"
+    "network",
+    "utilities"
   ],
-  "author": "You <you@you.tld>",
+  "author": "mrelipardo",
   "license": "BSD-3-Clause",
   "bugs": {
-    "url": "https://github.com/SteamDeckHomebrew/decky-plugin-template/issues"
+    "url": "https://github.com/mrelipardo/wolSender/issues"
   },
-  "homepage": "https://github.com/SteamDeckHomebrew/decky-plugin-template#readme",
+  "homepage": "https://github.com/mrelipardo/wolSender#readme",
   "devDependencies": {
     "@decky/rollup": "^1.0.2",
     "@decky/ui": "^4.11.0",
