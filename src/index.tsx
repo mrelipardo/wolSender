@@ -104,13 +104,13 @@ const DeviceModal: FC<{
     return true;
   };
 
-  const handleMacChange = (e: any) => {
+  const handleMacChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setMac(value);
     if (value) validateMAC(value);
   };
 
-  const handleIpChange = (e: any) => {
+  const handleIpChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setIp(value);
     if (value) validateIP(value);
@@ -631,26 +631,21 @@ function Content() {
   return (
     <PanelSection title="Wake-on-LAN">
       <PanelSectionRow>
-        <Focusable style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-          <div style={{ display: "flex", gap: "10px" }}>
-            <ButtonItem
-              layout="below"
-              onClick={handleAddDevice}
-              style={{ flex: 1 }}
-            >
-              <FaPlus /> Add Device Manually
-            </ButtonItem>
-          </div>
-          <div style={{ display: "flex", gap: "10px" }}>
-            <ButtonItem
-              layout="below"
-              onClick={handleNetworkScan}
-              style={{ flex: 1 }}
-            >
-              <FaNetworkWired /> Scan Network
-            </ButtonItem>
-          </div>
-        </Focusable>
+        <ButtonItem
+          layout="below"
+          onClick={handleAddDevice}
+        >
+          <FaPlus /> Add Device Manually
+        </ButtonItem>
+      </PanelSectionRow>
+      
+      <PanelSectionRow>
+        <ButtonItem
+          layout="below"
+          onClick={handleNetworkScan}
+        >
+          <FaNetworkWired /> Scan Network
+        </ButtonItem>
       </PanelSectionRow>
 
       {loading && (

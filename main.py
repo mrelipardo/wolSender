@@ -15,6 +15,10 @@ import decky
 class Plugin:
     """Wake-on-LAN plugin for Steam Deck."""
     
+    # Configuration constants
+    MAX_CONCURRENT_PINGS = 50  # Maximum number of concurrent ping operations
+    MAX_SUBNET_SIZE = 254  # Maximum number of IPs to scan in ping sweep
+    
     async def _main(self):
         """Initialize the plugin."""
         self.loop = asyncio.get_event_loop()
@@ -484,14 +488,14 @@ class Plugin:
             all_ips = [str(ip) for ip in network.hosts()]
             
             # Limit the number of IPs to scan (safety check)
-            if len(all_ips) > 254:
-                decky.logger.warning(f"Large subnet detected ({len(all_ips)} hosts), limiting to 254 IPs")
-                all_ips = all_ips[:254]
+            if len(all_ips) > self.MAX_SUBNET_SIZE:
+                decky.logger.warning(f"Large subnet detected ({len(all_ips)} hosts), limiting to {self.MAX_SUBNET_SIZE} IPs")
+                all_ips = all_ips[:self.MAX_SUBNET_SIZE]
             
             decky.logger.info(f"Starting ping sweep for {len(all_ips)} IPs")
             
             # Ping all IPs concurrently with limited concurrency
-            semaphore = asyncio.Semaphore(50)  # Limit to 50 concurrent pings
+            semaphore = asyncio.Semaphore(self.MAX_CONCURRENT_PINGS)
             
             async def ping_ip(ip: str) -> bool:
                 """Ping a single IP address."""
